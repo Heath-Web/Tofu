@@ -1,5 +1,5 @@
-LANDING_PAGE_FILE = "Tofu\\resources\\2022 CFO Recession Toolkit.html"
-OUTPUT_FILE_PREFIX = "Tofu\\resources\\Personalized landing page - "
+LANDING_PAGE_FILE = "resources\\2022 CFO Recession Toolkit.html"
+OUTPUT_FILE_PREFIX = "resources\\Personalized landing page - "
 
 import os
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
