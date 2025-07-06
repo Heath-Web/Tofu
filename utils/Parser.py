@@ -195,5 +195,9 @@ def parse_target_info(target_info:dict):
 if __name__ == "__main__":
     clean_company_info = parse_company_info(company_info)
     clean_target_info = parse_target_info(target_info)
+
+    print("Stampli 信息:")
     print(clean_company_info)
-    print(clean_target_info)
+    print("\n目标公司列表:")
+    for company in clean_target_info:
+        print(f"{company['company_name']}: {company['description']} - {company['url']}")

@@ -14,13 +14,13 @@ def root():
 
 
 @app.post("/personalize")
-def personalize():
-    service_impl.gen_personalized_page()
+async def personalize():
+    await service_impl.gen_personalized_page()
     return None
 
 @app.post("/save_playbook")
-def save_playbook(playbook:dict):
-    service_impl.save_playbook(playbook)
+async def save_playbook(playbook:dict):
+    await service_impl.save_playbook(playbook)
     return None
 
 if __name__ == "__main__":

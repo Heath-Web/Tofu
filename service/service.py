@@ -1,8 +1,11 @@
 from utils.Parser import parse_target_info, parse_company_info, original_text
-from utils.WebsiteContentExtractor import WebsiteContentExtractor
+from utils.WebsiteContentExtractor import WebsiteContentExtractor,extract_content_from_soup
 from constant import LANDING_PAGE_FILE, OUTPUT_FILE_PREFIX
 from utils.LLMUtils import gen_personalized_text, summary_website
 from bs4 import BeautifulSoup
+import aiofiles
+import asyncio
+import os
 
 class Service():
     
@@ -10,52 +13,59 @@ class Service():
         self.personalized_text = {}
         self.company_info = {}
         self.target_info = {}
-
         self.current_target = []
-        pass
 
     def get_output_file_path(self, company_name:str):
         return f"{OUTPUT_FILE_PREFIX}{company_name}.html"
 
-    def replace_html_content(self, input_file, output_file, replacements):
-        with open(input_file, 'r', encoding='utf-8') as file:
-            html_content = file.read()
-        
-        for old_text, new_text in replacements.items():
-            html_content = html_content.replace(old_text, new_text)
-        
-        with open(output_file, 'w', encoding='utf-8') as file:
-            file.write(html_content)
-        
-        print(f"文件已处理并保存为: {output_file}")
+    async def replace_html_content(self, input_file: str, output_file: str, replacements: dict):
+        try:
+            async with aiofiles.open(input_file, 'r', encoding='utf-8') as file:
+                html_content = await file.read()
+            
+            for old_text, new_text in replacements.items():
+                html_content = html_content.replace(old_text, new_text)
+            
+            async with aiofiles.open(output_file, 'w', encoding='utf-8') as file:
+                await file.write(html_content)
+            
+            print(f"Personalized Landing Page Saved in: {output_file}")
+            return True
+        except Exception as e:
+            print(f"Error when saving file {output_file}: {e}")
+            return False
     
-    def extract_target_info(self, target_info:dict, extractor:WebsiteContentExtractor):
+    async def extract_target_info(self, target_info:dict, extractor:WebsiteContentExtractor):
         company_name = target_info['name']
         if self.target_info.__contains__(company_name):
             return
         
-        content = extractor.get_page_content(target_info['url'])
-        if content:
-            summarized_content = summary_website(content)
-            target_info['details'] = summarized_content
-            
-            self.target_info[company_name] = target_info  
+        try:
+            content = await extractor.get_page_content(target_info['url'])
+            if content:
+                summarized_content = await summary_website(content)
+                target_info['details'] = summarized_content
+                self.target_info[company_name] = target_info  
+                return True
+        except Exception as e:
+            print(f"Error when extracting {company_name}: {str(e)}")
 
-    def gen_personalized_page(self):
-        website_extractor = WebsiteContentExtractor()
+        return False
 
-        with open(LANDING_PAGE_FILE, 'r', encoding='utf-8') as file:
-            html_content = file.read()
+    async def gen_personalized_page(self):
+        async with aiofiles.open(LANDING_PAGE_FILE, 'r', encoding='utf-8') as file:
+            html_content = await file.read()
         soup = BeautifulSoup(html_content, 'lxml')
-        template_page_content = website_extractor.extract_content(soup)
-
-        website_extractor.browser.close()
+        template_page_content = extract_content_from_soup(soup)
         
         for target_name in self.current_target:
             if self.personalized_text.__contains__(target_name):
                 replacements = dict(zip(original_text, self.personalized_text.get(target_name)))
-                self.replace_html_content(input_file=LANDING_PAGE_FILE, replacements=replacements, 
-                                          output_file=self.get_output_file_path(target_name))
+                await self.replace_html_content(
+                    input_file=LANDING_PAGE_FILE, 
+                    replacements=replacements, 
+                    output_file=self.get_output_file_path(target_name)
+                )
                 continue
 
             if not self.target_info.__contains__(target_name):
@@ -65,31 +75,36 @@ class Service():
             target_info = self.target_info[target_name]
             summarized_content = target_info['details']
             if summarized_content:
-                personalized_text = gen_personalized_text(company_info=self.company_info, 
-                                                          target_info=summarized_content,
-                                                          template_page_content=template_page_content,
-                                                          original_text=original_text)
+                personalized_text = await gen_personalized_text(
+                    company_info=self.company_info, 
+                    target_info=summarized_content,
+                    template_page_content=template_page_content,
+                    original_text=original_text
+                    )
                 self.personalized_text[target_name] = personalized_text
                 replacements = dict(zip(original_text, personalized_text))
-                self.replace_html_content(input_file=LANDING_PAGE_FILE, replacements=replacements, 
-                                          output_file=self.get_output_file_path(target_name))
-
+                await self.replace_html_content(
+                    input_file=LANDING_PAGE_FILE,
+                    replacements=replacements, 
+                    output_file=self.get_output_file_path(target_name)
+                    )
         return None
     
-    def save_playbook(self, playbook:dict):
+    async def save_playbook(self, playbook: dict):
         clean_target_info = parse_target_info(playbook['Target Info'])
         self.company_info = parse_company_info(playbook['Company Info'])
-        self.current_target = []
+        self.current_target = [target['name'] for target in clean_target_info]
 
-        website_extractor = WebsiteContentExtractor()
-        
-        for target in clean_target_info:
-            self.current_target.append(target['name'])
-            self.extract_target_info(target, website_extractor)
+        async with WebsiteContentExtractor() as extractor:
+            tasks = []
+            for target in clean_target_info:
+                task = self.extract_target_info(target, extractor)
+                tasks.append(task)
 
-        website_extractor.browser.close()
-        print(f'''Saving playbook finished.\nCurrent target company: {self.current_target}\nTotal target in system: {self.target_info.keys()}''')
-        return None
+            await asyncio.gather(*tasks, return_exceptions=True)
+
+        print(f'''Saving playbook finished.\nCurrent {len(self.current_target)} target company: {self.current_target}\nTotal {len(self.target_info.keys())} target in system: {self.target_info.keys()}''')
+        return True
       
 
 

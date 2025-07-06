@@ -1,29 +1,38 @@
-
 from langchain_openai import ChatOpenAI
 from constant import OPENAI_API_KEY
+import asyncio
 
 class LLMManager:
-
-    llm: ChatOpenAI 
+    _models: dict
+    _lock: asyncio.Lock 
 
     def __init__(self):
-        self.llm = None  
+        self._models = {}
+        self._lock = asyncio.Lock()
 
-    def get_json_llm_model(self, modle:str="deepseek-chat") -> ChatOpenAI:
-        if self.llm:
-            return self.llm
+    async def get_json_llm_model(self, model_name: str = "deepseek-chat") -> ChatOpenAI:
+        if model_name in self._models:
+            return self._models[model_name]
+        
+        async with self._lock:
+            if model_name in self._models:
+                return self._models[model_name]
+            
+            if model_name in ["deepseek-chat", "deepseek-reasoner"]:
+                model = ChatOpenAI(
+                    model=model_name,
+                    api_key=OPENAI_API_KEY,
+                    base_url="https://api.deepseek.com",
+                    model_kwargs={"response_format": {"type": "json_object"}}
+                )
+            else:
+                model = ChatOpenAI(
+                    model=model_name,
+                    api_key=OPENAI_API_KEY,
+                    model_kwargs={"response_format": {"type": "json_object"}}
+                )
+            
+            self._models[model_name] = model
+            return model
 
-        self.llm = ChatOpenAI(
-            model="deepseek-chat",
-            api_key= OPENAI_API_KEY,
-            base_url="https://api.deepseek.com",
-            model_kwargs={
-                "response_format": {"type": "json_object"}  
-            }
-        )
-
-        return self.llm
-
-
-llm_manager_impl = LLMManager()    
-
+llm_manager_impl = LLMManager()

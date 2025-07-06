@@ -2,7 +2,7 @@ from utils.LLMManager import llm_manager_impl
 from langchain_core.prompts import ChatPromptTemplate,SystemMessagePromptTemplate, HumanMessagePromptTemplate
 from langchain_core.output_parsers import JsonOutputParser
 from pydantic import BaseModel, Field
-import json
+import asyncio
 
 class CompanyProfile(BaseModel):
     company_name: str = Field(description="Company Name")
@@ -10,7 +10,7 @@ class CompanyProfile(BaseModel):
     product_overview: str = Field(description="Product Overview")
     company_description: str = Field(description="Company Description")
 
-def summary_website(website_content: str) -> dict:
+async def summary_website(website_content: str) -> dict:
     prompt_template = ChatPromptTemplate.from_template("""
     Below is the plain text information I extracted from the company's official website. 
     In this content, # indicates a main heading, ## indicates a subheading, and text without any # is considered regular content.
@@ -23,16 +23,19 @@ def summary_website(website_content: str) -> dict:
     Return ONLY valid JSON in the format instruction.
     """)
     output_parser = JsonOutputParser(pydantic_object=CompanyProfile)
-    llm = llm_manager_impl.get_json_llm_model()
+    llm = await llm_manager_impl.get_json_llm_model()
 
     chain = prompt_template | llm | output_parser 
     
-    result = chain.invoke({"website_content":website_content, 
-                           "format_instruction":output_parser.get_format_instructions()})
+    result = await chain.ainvoke({
+        "website_content":website_content, 
+        "format_instruction":output_parser.get_format_instructions()
+    })
     print(f"Summary of the Website：\n{result}")
     return result
 
-def gen_personalized_text(company_info:dict, target_info:dict, template_page_content:list, original_text:list):
+
+async def gen_personalized_text(company_info:dict, target_info:dict, template_page_content:list, original_text:list):
 
     system_prompt = SystemMessagePromptTemplate.from_template("""
     You are a marketing assistant helping personalize landing pages for different target companies.
@@ -62,16 +65,56 @@ def gen_personalized_text(company_info:dict, target_info:dict, template_page_con
     )
 
     output_parser = JsonOutputParser()
-    llm = llm_manager_impl.get_json_llm_model()
+    llm = await llm_manager_impl.get_json_llm_model()
     chain = prompt_template | llm | output_parser
-    res = chain.invoke({"company_info":company_info,
-                        "target_info":target_info,
-                        "template_page_content": template_page_content,
-                        "original_text": original_text,
-                        "text_count": len(original_text)})
+    res = await chain.ainvoke({
+        "company_info":company_info,
+        "target_info":target_info,
+        "template_page_content": template_page_content,
+        "original_text": original_text,
+        "text_count": len(original_text)
+    })
         
-    print(f"公司名称：  {target_info["company_name"]} \n替换文字： {res} \n ================================================== ")
-    if res.__contains__("personalized_texts"):
+    print(f"Compant Name：{target_info["company_name"]} \nPersonalized Text： {res} \n ================================================== ")
+    if isinstance(res, dict) and "personalized_texts" in res:
         return res["personalized_texts"]
-    else:
+    elif isinstance(res, list):
         return res
+    else:
+        print(f"意外返回格式: {type(res)} - {res}")
+        return []
+    
+from utils.Parser import parse_company_info, company_info, original_text
+import asyncio
+async def main():
+    target_info = {
+    'company_name': 'YMCA', 
+    'official_overview': 'The YMCA is the leading nonprofit committed to strengthening individuals and communities across the country. At the Y, we’re here to help you find your “why” – your greater sense of purpose – by connecting you with opportunities to improve your health, support young people, make new friends and contribute to a stronger, more cohesive community for all.', 
+    'product_overview': 'Our programs and services are focused on our primary areas of impact that help people achieve their goals and strengthen communities. With our breadth of offerings, you can find the support you need and help your neighborhood thrive.', 
+    'company_description': 'Each year, we strive to transform lives and strengthen communities worldwide. Across the U.S., our Ys reach millions of people in 10,000 communities. We provide millions of pounds of groceries to families each month. Our day and overnight camps empowered kids by building lifelong skills, confidence and friendships. Ys reach millions of people across 50 states, plus the District of Columbia and Puerto Rico.'
+    } 
+    template_content = ['Describtion: This G2 Report download is a scorecard for all the players in the AP Automation market and how they compare to one another. G2 scores products based on reviews gathered from its community of 1.28+ million users, as well as data aggregated from online sources and social networks.', 
+            '# Preparing for a recession toolkit', 
+            'A recession readiness toolkit to guide CFOs and finance leaders through recessions and periods of economic instability.', 
+            '## "2022 CFO Recession Toolkit"', '### Recession readiness toolkit to minimize the impact of an economic downturn.', 
+            'Managers are dealing with a number of economic issues, and some analysts believe that the US is headed toward a recession.To respond to the challenge, take action to address a possible recession now, so that you’re ready to minimize the impact and outperform competitors who are not proactive.', 
+            'Download our "2022 CFO Recession Toolkit" to receive actionable recession readiness insights on:', 
+            '## Get your 2022 CFO Recession Toolkit', 
+            "Download the toolkit here (it's free!).", 
+            "By submitting your information, you acknowledge that your data will be handled in accordance with Stampli's Terms of Service and Privacy Policy, and you authorize Stampli to send you updates about Stampli products, services, and events."]
+    clean_company_info = parse_company_info(company_info=company_info)
+    
+    # 异步调用
+    personalized_texts = await gen_personalized_text(
+        clean_company_info,
+        target_info,
+        template_content,
+        original_text
+    )
+    
+    print("生成的个性化文本:")
+    for i, text in enumerate(personalized_texts):
+        print(f"{i+1}. {text}")
+
+if __name__ == "__main__":
+    asyncio.run(main())
