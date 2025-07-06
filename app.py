@@ -14,8 +14,13 @@ def root():
 
 
 @app.post("/personalize")
-def personalize(playbook:dict):
-    service_impl.gen_personalized_page(playbook)
+def personalize():
+    service_impl.gen_personalized_page()
+    return None
+
+@app.post("/save_playbook")
+def save_playbook(playbook:dict):
+    service_impl.save_playbook(playbook)
     return None
 
 if __name__ == "__main__":

@@ -39,14 +39,14 @@ class WebsiteContentExtractor:
         text = re.sub(r'\s+', ' ', text)
         return text.strip()
 
-    def get_page_content(self, url, timeout:int=8000) -> list:
+    def get_page_content(self, url, timeout:int=60000) -> list:
         try:
             print(f"正在抓取页面： {url}")
 
             page = self.browser.new_page()
-            page.goto(url=url)
+            page.goto(url=url,wait_until="load", timeout=timeout)
             page.mouse.move(100, 100)
-            page.wait_for_timeout(timeout)
+            page.wait_for_timeout(2000)
             content = page.content()
 
             soup = BeautifulSoup(content, 'lxml')
@@ -54,15 +54,19 @@ class WebsiteContentExtractor:
             page_content = self.extract_content(soup)
             page.close()
 
-            if page_content: return page_content
+            if page_content: 
+                print(f"页面{url}内容提取完成")
+                return page_content
             else:  
-                print("页面内容为空")
+                print(f"页面{url}内容为空")
                 return None
                         
         except Exception as e:
             print(f"抓取 {url} 时出错: {str(e)}")
             return None
-
+        finally:
+            if page and not page.is_closed(): 
+                page.close()
 
 if __name__ == "__main__":
 
