@@ -69,7 +69,7 @@ async def gen_personalized_text(company_info:dict, target_info:dict, template_pa
         )
 
         output_parser = JsonOutputParser()
-        llm = await llm_manager_impl.get_json_llm_model(model_name="deepseek-reasoner")
+        llm = await llm_manager_impl.get_json_llm_model(model_name="deepseek-chat")
         chain = prompt_template | llm | output_parser
         res = await chain.ainvoke({
             "company_info":company_info,
