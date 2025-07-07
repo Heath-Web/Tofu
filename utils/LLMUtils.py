@@ -10,79 +10,83 @@ class CompanyProfile(BaseModel):
     product_overview: str = Field(description="Product Overview")
     company_description: str = Field(description="Company Description")
 
+SUMMARY_SEMAPHORE = asyncio.Semaphore(5)
+
 async def summary_website(website_content: str) -> dict:
-    prompt_template = ChatPromptTemplate.from_template("""
-    Below is the plain text information I extracted from the company's official website. 
-    In this content, # indicates a main heading, ## indicates a subheading, and text without any # is considered regular content.
+    async with SUMMARY_SEMAPHORE:
+        prompt_template = ChatPromptTemplate.from_template("""
+        Below is the plain text information I extracted from the company's official website. 
+        In this content, # indicates a main heading, ## indicates a subheading, and text without any # is considered regular content.
 
-    Website content: {website_content}
-                                                
-    Considering several aspects mentioned in this format instruction: {format_instruction} 
-                                                       
-    Please extract and summarize the company's profile based on the Website content and the format instruction.
-    Return ONLY valid JSON in the format instruction.
-    """)
-    output_parser = JsonOutputParser(pydantic_object=CompanyProfile)
-    llm = await llm_manager_impl.get_json_llm_model()
+        Website content: {website_content}
+                                                    
+        Considering several aspects mentioned in this format instruction: {format_instruction} 
+                                                        
+        Please extract and summarize the company's profile based on the Website content and the format instruction.
+        Return ONLY valid JSON in the format instruction.
+        """)
+        output_parser = JsonOutputParser(pydantic_object=CompanyProfile)
+        llm = await llm_manager_impl.get_json_llm_model()
 
-    chain = prompt_template | llm | output_parser 
-    
-    result = await chain.ainvoke({
-        "website_content":website_content, 
-        "format_instruction":output_parser.get_format_instructions()
-    })
-    print(f"Summary of the Website：\n{result}")
-    return result
+        chain = prompt_template | llm | output_parser 
+        
+        result = await chain.ainvoke({
+            "website_content":website_content, 
+            "format_instruction":output_parser.get_format_instructions()
+        })
+        print(f"Summary of the Website：\n{result}")
+        return result
 
+GEN_TEXT_SEMAPHORE = asyncio.Semaphore(5)
 
 async def gen_personalized_text(company_info:dict, target_info:dict, template_page_content:list, original_text:list):
-
-    system_prompt = SystemMessagePromptTemplate.from_template("""
-    You are a marketing assistant helping personalize landing pages for different target companies.
-    And you are working at a company called Stampli.
-    Stampli Overview: {company_info}
-    
-    Target Company Info: {target_info}
-
-    Template landing page: {template_page_content}                                                          
-    """)
-
-    human_prompt = HumanMessagePromptTemplate.from_template("""
-    Please write {text_count} personalized text to replace the following original texts in the template landing page:
-    {original_text}
-
-    The newly generated personalized text should be :
-    1. Tailored to appeal to the target company’s name, industry, goals and products.
-    2. Staying aligned with Stampli’s tone and core messaging.
-    3. Naturally integrate into the template landing page rather than a bunch of randomly assembled paragraphs.
-    4. The word count should be similar to the original text (within ±20% word count).
+    async with GEN_TEXT_SEMAPHORE: 
+        system_prompt = SystemMessagePromptTemplate.from_template("""
+        You are a marketing assistant helping personalize landing pages for different target companies.
+        And you are working at a company called Stampli.
+        Stampli Overview: {company_info}
         
-    Return an json array list that only contains exactly {text_count} strings in the same order as the original texts, like ["text1", "text2", ..., "textN"]
-    """)
+        Target Company Info: {target_info}
 
-    prompt_template = ChatPromptTemplate.from_messages(
-        [system_prompt, human_prompt]
-    )
+        Template landing page: {template_page_content}                                                          
+        """)
 
-    output_parser = JsonOutputParser()
-    llm = await llm_manager_impl.get_json_llm_model()
-    chain = prompt_template | llm | output_parser
-    res = await chain.ainvoke({
-        "company_info":company_info,
-        "target_info":target_info,
-        "template_page_content": template_page_content,
-        "original_text": original_text,
-        "text_count": len(original_text)
-    })
-        
-    print(f"Compant Name：{target_info["company_name"]} \nPersonalized Text： {res} \n ================================================== ")
-    if isinstance(res, dict) and "personalized_texts" in res:
-        return res["personalized_texts"]
-    elif isinstance(res, list):
-        return res
-    else:
-        print(f"意外返回格式: {type(res)} - {res}")
-        return []
+        human_prompt = HumanMessagePromptTemplate.from_template("""
+        Please write {text_count} personalized text to replace the following original texts in the template landing page:
+        {original_text}
+
+        The newly generated personalized text should be :
+        1. Tailored to appeal to the target company’s name, industry, goals and products.
+        2. Staying aligned with Stampli’s tone and core messaging.
+        3. Naturally integrate into the template landing page rather than a bunch of randomly assembled paragraphs.
+        4. The word count should be similar to the original text (within ±20% word count).
+            
+        Return an json array list that only contains exactly {text_count} strings in the same order as the original texts, like ["text1", "text2", ..., "textN"]
+        """)
+
+        prompt_template = ChatPromptTemplate.from_messages(
+            [system_prompt, human_prompt]
+        )
+
+        output_parser = JsonOutputParser()
+        llm = await llm_manager_impl.get_json_llm_model()
+        chain = prompt_template | llm | output_parser
+        res = await chain.ainvoke({
+            "company_info":company_info,
+            "target_info":target_info,
+            "template_page_content": template_page_content,
+            "original_text": original_text,
+            "text_count": len(original_text)
+        })
+            
+        print(f"Compant Name：{target_info["company_name"]} \nPersonalized Text： {res} \n ================================================== ")
+        if isinstance(res, dict) and "personalized_texts" in res:
+            return res["personalized_texts"]
+        elif isinstance(res, list):
+            return res
+        else:
+            print(f"意外返回格式: {type(res)} - {res}")
+            return []
     
 from utils.Parser import parse_company_info, company_info, original_text
 import asyncio
