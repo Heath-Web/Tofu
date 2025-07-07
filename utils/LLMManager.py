@@ -1,5 +1,5 @@
 from langchain_openai import ChatOpenAI
-from constant import OPENAI_API_KEY
+from constant import DEEPSEEK_API_KEY, OPENAI_API_KEY
 import asyncio
 
 class LLMManager:
@@ -21,7 +21,7 @@ class LLMManager:
             if model_name in ["deepseek-chat", "deepseek-reasoner"]:
                 model = ChatOpenAI(
                     model=model_name,
-                    api_key=OPENAI_API_KEY,
+                    api_key=DEEPSEEK_API_KEY,
                     base_url="https://api.deepseek.com",
                     model_kwargs={"response_format": {"type": "json_object"}}
                 )
