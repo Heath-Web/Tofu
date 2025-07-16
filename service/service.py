@@ -1,7 +1,7 @@
 from utils.Parser import parse_target_info, parse_company_info, original_text
 from utils.WebsiteContentExtractor import WebsiteContentExtractor,extract_content_from_soup
 from constant import LANDING_PAGE_FILE, OUTPUT_FILE_PREFIX
-from utils.LLMUtils import gen_personalized_text, summary_website
+from utils.LLMUtils import gen_personalized_text, summary_website, analyze_target_insights
 from bs4 import BeautifulSoup
 import aiofiles
 import asyncio
@@ -50,6 +50,8 @@ class Service():
             if content:
                 summarized_content = await summary_website(content)
                 target_info['details'] = summarized_content
+                target_insight = await analyze_target_insights(content)
+                target_info['insight'] = target_insight
                 self.target_info[company_name] = target_info  
                 return True
         except Exception as e:
@@ -78,10 +80,11 @@ class Service():
 
         target_info = self.target_info[target_name]
         summarized_content = target_info['details']
-        if summarized_content:
+        target_insight = target_info['insight']
+        if summarized_content and target_insight:
             personalized_text = await gen_personalized_text(
                 company_info = self.company_info, 
-                target_info = summarized_content,
+                target_info = {"details": summarized_content, "insight": target_insight},
                 template_page_content = self.template_page_content,
                 original_text=original_text)
             
@@ -107,7 +110,8 @@ class Service():
             await asyncio.gather(*tasks, return_exceptions=True)
 
         print(f'''------------------------\nSaving playbook finished.\nCurrent {len(self.current_target)} target company: {[t['name'] for t in self.current_target ]}\nTotal {len(self.target_info.keys())} target in system: {self.target_info.keys()}''')
-        return True
+        
+        return [self.target_info[t['name']] for t in self.current_target]
       
 
 service_impl = Service()

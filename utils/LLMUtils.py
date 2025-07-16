@@ -3,12 +3,18 @@ from langchain_core.prompts import ChatPromptTemplate,SystemMessagePromptTemplat
 from langchain_core.output_parsers import JsonOutputParser
 from pydantic import BaseModel, Field
 import asyncio
+from tenacity import retry, stop_after_attempt, wait_random_exponential, retry_if_exception_type, RetryError
 
 class CompanyProfile(BaseModel):
     company_name: str = Field(description="Company Name")
     official_overview: str = Field(description="Official Overview")
     product_overview: str = Field(description="Product Overview")
     company_description: str = Field(description="Company Description")
+
+class TargetInight(BaseModel):
+    company_name: str = Field(description="Company Name")
+    pain_points: str = Field(description="List of 3-5 key pain points the company likely faces")
+    value_proposition: str = Field(description="List of 3-5 key value proposition the company likely faces")
 
 SUMMARY_SEMAPHORE = asyncio.Semaphore(5)
 
@@ -37,6 +43,38 @@ async def summary_website(website_content: str) -> dict:
         print(f"Summary of the Website：\n{result}")
         return result
 
+
+ANALYZE_INSIGHT_SEMAPHORE = asyncio.Semaphore(5)
+async def analyze_target_insights(website_content: str) -> dict:
+    async with ANALYZE_INSIGHT_SEMAPHORE:
+        prompt_template = ChatPromptTemplate.from_template("""
+        You are a marketing assistant helping analyze target company's insights.
+        Below is the plain text information I extracted from the company's official website. 
+        In this content, # indicates a main heading, ## indicates a subheading, and text without any # is considered regular content.
+
+        Website content: {website_content}
+                                                    
+        Considering several aspects mentioned in this format instruction: {format_instruction} 
+                                                        
+        Generate: 
+        1. 3-5 key pain points the company likely faces
+        2. 3-5 key value propositions the company likely faces
+                                                           
+        Return ONLY valid JSON in the format instruction.
+        """)
+        output_parser = JsonOutputParser(pydantic_object=TargetInight)
+        llm = await llm_manager_impl.get_json_llm_model(model_name="deepseek-chat")
+
+        chain = prompt_template | llm | output_parser 
+        
+        result = await chain.ainvoke({
+            "website_content":website_content, 
+            "format_instruction":output_parser.get_format_instructions()
+        })
+        print(f"Insights of the Website：\n{result}")
+        return result
+
+
 GEN_TEXT_SEMAPHORE = asyncio.Semaphore(5)
 
 async def gen_personalized_text(company_info:dict, target_info:dict, template_page_content:list, original_text:list):
@@ -56,7 +94,7 @@ async def gen_personalized_text(company_info:dict, target_info:dict, template_pa
         {original_text}
 
         The newly generated personalized text should be :
-        1. Tailored to appeal to the target company’s name, industry, goals and products.
+        1. Tailored to appeal to the target company’s overview, pain points and value proposition.
         2. Staying aligned with Stampli’s tone and core messaging.
         3. Naturally integrate into the template landing page rather than a bunch of randomly assembled paragraphs.
         4. The word count should be similar to the original text (within ±20% word count).

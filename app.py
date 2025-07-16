@@ -20,8 +20,11 @@ async def personalize():
 
 @app.post("/save_playbook")
 async def save_playbook(playbook:dict):
-    await service_impl.save_playbook(playbook)
-    return None
+    target_insight  = await service_impl.save_playbook(playbook)
+    return {
+        "status":"success",
+        "insights":target_insight
+    }
 
 if __name__ == "__main__":
     uvicorn.run(app, host="0.0.0.0", port=8000)
