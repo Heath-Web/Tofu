@@ -6,6 +6,8 @@ from bs4 import BeautifulSoup
 import aiofiles
 import asyncio
 import os
+import threading
+from concurrent.futures import ThreadPoolExecutor
 
 class Service():
     
@@ -19,6 +21,9 @@ class Service():
             html_content = file.read()
         soup = BeautifulSoup(html_content, 'lxml')
         self.template_page_content = extract_content_from_soup(soup)
+
+        self.backend_loop = None 
+        threading.Thread(target=self.start_event_loop_thread, daemon=True).start()
 
     def get_output_file_path(self, company_name:str):
         return f"{OUTPUT_FILE_PREFIX}{company_name}.html"
@@ -100,19 +105,26 @@ class Service():
         await asyncio.gather(*tasks, return_exceptions=True)
         return None
     
+    def start_event_loop_thread(self):
+        loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(loop)
+        self.backend_loop = loop
+        loop.run_forever()
+
     async def save_playbook(self, playbook: dict):
         clean_target_info = parse_target_info(playbook['Target Info'])
         self.company_info = parse_company_info(playbook['Company Info'])
         self.current_target = clean_target_info
 
-        async with WebsiteContentExtractor() as extractor:
-            tasks = [self.extract_target_info(target, extractor) for target in clean_target_info ]
-            await asyncio.gather(*tasks, return_exceptions=True)
+        async def gather_tasks():
+            async with WebsiteContentExtractor() as extractor:
+                tasks = [self.extract_target_info(target, extractor) for target in clean_target_info]
+                await asyncio.gather(*tasks,return_exceptions=True)
+            print(f'''------------------------\nSaving playbook finished.\nCurrent {len(self.current_target)} target company: {[t['name'] for t in self.current_target]}\nTotal {len(self.target_info.keys())} target in system: {self.target_info.keys()}''')
 
-        print(f'''------------------------\nSaving playbook finished.\nCurrent {len(self.current_target)} target company: {[t['name'] for t in self.current_target ]}\nTotal {len(self.target_info.keys())} target in system: {self.target_info.keys()}''')
-        
-        return [self.target_info[t['name']] for t in self.current_target]
-      
+        asyncio.run_coroutine_threadsafe(gather_tasks(), self.backend_loop)
+            
+        return True
 
 service_impl = Service()
 
